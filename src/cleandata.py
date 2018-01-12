@@ -58,12 +58,12 @@ def intersect(a, b):
     return list(set(a) & set(b))
 
 
-def cleandata(community, noncommunity, graph):
+def genCleandata(community, noncommunity, graph):
     '''
     |- inputs:
-        |-- community: data frame with the daily PAL data for community participants
-        |-- noncommunity: data frame with the daily PAL data for non community participants
-        |-- graph: dictionary containing the information of the graph (nodes and edges)
+        |-- community: data frame with the daily PAL data for community participants.
+        |-- noncommunity: data frame with the daily PAL data for non community participants.
+        |-- graph: dictionary containing the information of the graph (nodes and edges).
     |- outputs:
         |-- community: data frame with the daily PAL and the attributes of all nodes remaining after cleaning.
         |-- noncommunity: data frame with the daily PAL and the attributes of all nodes remaining after cleaning.
@@ -361,36 +361,136 @@ def cleandata(community, noncommunity, graph):
 
     return community, noncommunity, nodesDegrees, nodes, new_edges
 
-if __name__ == '__main__':
-    raw_files_f='../data/raw/'
-    destine_f='../data/clean/'
-    if not os.path.exists(destine_f):
-        os.makedirs(destine_f)
 
-    community_f = raw_files_f+'activity_per_day.csv'
-    noncommunity_f = raw_files_f+'noncommunity_activity_per_day.csv'
+def readCleandata(data_f):
+    '''
+    Test if the clean data is available and return it.
+    '''
+    clean_files_f = data_f+'clean/'
+    if not os.path.exists(clean_files_f):
+        print('Clean data folder ({}clean) does not exist. Run cleandata() to generate it.'.format(data_f))
+        return False
+    try:
+        community_f = clean_files_f+'community.csv'
+        noncommunity_f = clean_files_f+'noncommunity.csv'
+    except:
+        print('Files community.csv and/or noncommunity.csv not generated. Run cleandata() to generate it.')
+        return False
 
+    # Community data set
+    print('-----------------------------------------------------')
+    print('community.csv and noncommunity.csv read successfully!')
+    print('-----------------------------------------------------')
     community = pd.read_csv(community_f)
+    community.date = pd.to_datetime(community.date)
+    community.first_plan = pd.to_datetime(community.first_plan)
+    community['end_first_plan'] = community['first_plan'] + pd.DateOffset(days=84)
+    community.drop('Unnamed: 0', axis=1, inplace=True)
+
     noncommunity = pd.read_csv(noncommunity_f)
+    noncommunity.date = pd.to_datetime(noncommunity.date)
+    noncommunity.first_plan = pd.to_datetime(noncommunity.first_plan)
+    noncommunity['end_first_plan'] = noncommunity['first_plan'] + pd.DateOffset(days=84)
+    noncommunity.drop('Unnamed: 0', axis=1, inplace=True)
 
-    # non community does not have duplicates
-    community = community.drop_duplicates()
+    # Read nodesDegrees
+    try:
+        nodesDegrees = pd.read_csv(clean_files_f+'degrees_per_day.csv')
+    except:
+        print('File degrees_per_day.csv not generated. Run cleandata() to generate it.')
+        return False
+    nodesDegrees.index = pd.to_datetime(nodesDegrees['Unnamed: 0'])
+    nodesDegrees.drop('Unnamed: 0', axis=1, inplace=True)
+    nodesDegrees.index.names = [None]
 
-    # Graph
-    graph_file = raw_files_f+'communalitics2015.gexf'
+    print('-----------------------------------------------------')
+    print('degrees_per_day.csv read successfully!')
+    print('-----------------------------------------------------')
 
-    with open(graph_file) as fd:
-        root = xmltodict.parse(fd.read())
-    graph = root['gexf']['graph']
+    try:
+        nodes = pickle.load(open(clean_files_f+'nodes.pickle', 'rb'))
+        edges = pickle.load(open(clean_files_f+'edges.pickle', 'rb'))
+    except:
+        print('Files nodes.pickle and/or edges.pickle not generated. Run cleandata() to generate it.')
+        return False
 
-    comm, noncom, nodesDeg, nods, edgs = cleandata(community, noncommunity, graph)
+    print('-----------------------------------------------------')
+    print('nodes.pickle and edges.pickle read successfully!')
+    print('-----------------------------------------------------')
 
-    print('Saving files...')
-    comm.to_csv(destine_f+'community.csv')
-    noncom.to_csv(destine_f+'noncommunity.csv')
-    nodesDeg.to_csv(destine_f+'degrees_per_day.csv')
-    pickle.dump(nods , 
-        open(destine_f+'nodes.pickle', 'wb'))
+    nodes_in_community = list(set(community.id))
+    print('\tNODES IN COMMUNITY DATA SET: \t\t', len(nodes_in_community))
 
-    pickle.dump(edgs, 
-        open(destine_f+'edges.pickle', 'wb'))
+    nodes_in_noncommunity = list(set(noncommunity.id))
+    print('\tNODES IN NON COMMUNITY DATA SET: \t', len(nodes_in_noncommunity))
+
+    return community, noncommunity, nodesDegrees, nodes, edges
+
+
+
+
+def getCleandata(data_f='../data/'):
+
+    outputs = readCleandata(data_f)
+
+    if outputs is not False:
+        community, noncommunity, nodesDegrees, nodes, edges = outputs
+    else:
+        print('Running cleandata() to generate clean data set.')
+        raw_files_f=data_f+'raw/'
+        destine_f=data_f+'clean/'
+
+        if not os.path.exists(destine_f):
+            os.makedirs(destine_f)
+
+        community_f = raw_files_f+'activity_per_day.csv'
+        noncommunity_f = raw_files_f+'noncommunity_activity_per_day.csv'
+
+        community_df = pd.read_csv(community_f)
+        noncommunity_df = pd.read_csv(noncommunity_f)
+
+        # non community does not have duplicates
+        community_df = community_df.drop_duplicates()
+
+        # Graph
+        graph_file = raw_files_f+'communalitics2015.gexf'
+
+        with open(graph_file) as fd:
+            root = xmltodict.parse(fd.read())
+        graph = root['gexf']['graph']
+
+        community, noncommunity, nodesDegrees, nodes, edges = genCleandata(community_df, noncommunity_df, graph)
+
+        # Adjustments 
+        community.date = pd.to_datetime(community.date)
+        community.first_plan = pd.to_datetime(community.first_plan)
+        community['end_first_plan'] = community['first_plan'] + pd.DateOffset(days=84)
+        noncommunity.date = pd.to_datetime(noncommunity.date)
+        noncommunity.first_plan = pd.to_datetime(noncommunity.first_plan)
+        noncommunity['end_first_plan'] = noncommunity['first_plan'] + pd.DateOffset(days=84)
+
+        # Saving files...
+        print('Saving files...')
+        community.to_csv(destine_f+'community.csv')
+        noncommunity.to_csv(destine_f+'noncommunity.csv')
+        nodesDegrees.to_csv(destine_f+'degrees_per_day.csv')
+        pickle.dump(nodes , 
+            open(destine_f+'nodes.pickle', 'wb'))
+
+        pickle.dump(edges, 
+            open(destine_f+'edges.pickle', 'wb'))
+    
+    print('----------------------------------------------')
+    print('Final Report')
+    print('----------------------------------------------')
+
+    print('Number of nodes in community csv file: #', len(set(community.id)))
+    print('Number of nodes in non community csv file: #', len(set(noncommunity.id)))
+    print('Number of nodes in nodes list: #', len(set(nodes)))
+    print('Number of edges in edges list: #', len(set(edges)))
+
+    return community, noncommunity, nodesDegrees, nodes, edges
+
+
+if __name__ == '__main__':
+    getCleandata()
